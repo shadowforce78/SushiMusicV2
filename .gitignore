@@ -1,6 +1,7 @@
 node_modules
 package-lock.json
 .venv
+*.mp3
 
 # DO NOT REMOVE THESE FOR SECURITY
 src/config.js
