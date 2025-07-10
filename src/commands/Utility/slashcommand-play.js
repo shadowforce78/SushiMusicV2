@@ -1,11 +1,12 @@
 const { ChatInputCommandInteraction } = require("discord.js");
 const DiscordBot = require("../../client/DiscordBot");
 const ApplicationCommand = require("../../structure/ApplicationCommand");
-const { createAudioPlayer, createAudioResource, joinVoiceChannel, AudioPlayerStatus } = require('@discordjs/voice');
+const { joinVoiceChannel } = require('@discordjs/voice');
 const run = require('@saumondeluxe/musicord-dl');
 const fs = require('fs');
 const path = require('path');
 const { search } = require('yt-search');
+const musicQueue = require('../../utils/MusicQueue');
 
 
 module.exports = new ApplicationCommand({
@@ -59,9 +60,15 @@ module.exports = new ApplicationCommand({
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
+        // Nettoyer le dossier temp seulement si aucune queue n'existe
+        if (!musicQueue.hasQueue(interaction.guild.id)) {
+            musicQueue.clearTempDir();
+        }
+
         let downloadedFile = null;
         let finalFilePath = null;
         let url = query;
+        let songTitle = query;
 
         try {
             // Si ce n'est pas un lien YouTube, rechercher la chanson
@@ -82,7 +89,8 @@ module.exports = new ApplicationCommand({
                 // Prendre la première vidéo trouvée
                 const firstVideo = searchResults.videos[0];
                 url = firstVideo.url;
-
+                songTitle = `${firstVideo.title} - ${firstVideo.author.name}`;
+                
                 await interaction.editReply({
                     content: `Found: "${firstVideo.title}" by ${firstVideo.author.name}. Downloading...`,
                     ephemeral: true
@@ -106,52 +114,50 @@ module.exports = new ApplicationCommand({
             fs.renameSync(downloadedFile, finalFilePath);
             console.log('Moved file to:', finalFilePath);
 
-            // Étape 4: Jouer la musique
-            await interaction.editReply({
-                content: 'Download complete! Now playing your song...',
-                ephemeral: true
-            });
+            // Créer l'objet chanson
+            const songData = {
+                title: songTitle,
+                filePath: finalFilePath,
+                url: url,
+                requestedBy: interaction.user.tag
+            };
 
-            const connection = joinVoiceChannel({
-                channelId: channel.id,
-                guildId: channel.guild.id,
-                adapterCreator: channel.guild.voiceAdapterCreator,
-            });
-
-            const player = createAudioPlayer();
-            const resource = createAudioResource(finalFilePath);
-            connection.subscribe(player);
-            player.play(resource);
-
-            // Étape 5: Gérer la fin de la lecture et supprimer le fichier
-            player.on(AudioPlayerStatus.Idle, () => {
-                console.log('Finished playing audio file:', finalFilePath);
-
-                // Supprimer le fichier après la lecture
-                if (fs.existsSync(finalFilePath)) {
-                    fs.unlinkSync(finalFilePath);
-                    console.log('Deleted temporary file:', finalFilePath);
-                }
-
-                // Déconnecter le bot du channel vocal
-                connection.destroy();
-            });
-
-            player.on('error', error => {
-                console.error('Error playing audio file:', error);
-                interaction.followUp({
-                    content: 'An error occurred while trying to play the audio file.',
-                    ephemeral: true
+            // Vérifier s'il y a déjà une queue active
+            let queue = musicQueue.getQueue(interaction.guild.id);
+            
+            if (!queue) {
+                // Créer une nouvelle connexion et queue
+                const connection = joinVoiceChannel({
+                    channelId: channel.id,
+                    guildId: channel.guild.id,
+                    adapterCreator: channel.guild.voiceAdapterCreator,
                 });
 
-                // Supprimer le fichier en cas d'erreur
-                if (finalFilePath && fs.existsSync(finalFilePath)) {
-                    fs.unlinkSync(finalFilePath);
-                    console.log('Deleted temporary file after error:', finalFilePath);
-                }
+                queue = musicQueue.createQueue(interaction.guild.id, connection, interaction);
+                
+                if (await musicQueue.addSong(interaction.guild.id, songData)) {
+                    await interaction.editReply({
+                        content: `🎵 Added to queue: **${songTitle}**\nStarting playback...`,
+                        ephemeral: true
+                    });
 
-                connection.destroy();
-            });
+                    // Commencer la lecture
+                    await musicQueue.playNext(interaction.guild.id);
+                } else {
+                    throw new Error('Failed to add song to database queue');
+                }
+            } else {            // Ajouter à la queue existante
+            if (await musicQueue.addSong(interaction.guild.id, songData)) {
+                const queuePosition = queue.songs.length;
+                
+                await interaction.editReply({
+                    content: `📝 Added to queue: **${songTitle}**\nPosition in queue: **${queuePosition}**`,
+                    ephemeral: true
+                });
+            } else {
+                throw new Error('Failed to add song to database queue');
+            }
+            }
 
         } catch (error) {
             console.error('Download or playback error:', error);
@@ -164,10 +170,17 @@ module.exports = new ApplicationCommand({
                 fs.unlinkSync(finalFilePath);
             }
 
-            await interaction.editReply({
-                content: 'An error occurred while downloading or playing the song. Please try again later.',
-                ephemeral: true
-            });
+            if (interaction.replied || interaction.deferred) {
+                await interaction.editReply({
+                    content: 'An error occurred while downloading or playing the song. Please try again later.',
+                    ephemeral: true
+                });
+            } else {
+                await interaction.reply({
+                    content: 'An error occurred while downloading or playing the song. Please try again later.',
+                    ephemeral: true
+                });
+            }
         }
     }
 }).toJSON();
