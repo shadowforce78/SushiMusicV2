@@ -5,6 +5,7 @@ const { createAudioPlayer, createAudioResource, joinVoiceChannel, AudioPlayerSta
 const run = require('@saumondeluxe/musicord-dl');
 const fs = require('fs');
 const path = require('path');
+const { search } = require('yt-search');
 
 
 module.exports = new ApplicationCommand({
@@ -14,8 +15,8 @@ module.exports = new ApplicationCommand({
         type: 1,
         options: [
             {
-                name: 'url',
-                description: 'The YouTube URL of the song to play.',
+                name: 'query',
+                description: 'YouTube URL or song title to play.',
                 type: 3,
                 required: true
             }
@@ -38,13 +39,19 @@ module.exports = new ApplicationCommand({
             });
         }
 
-        const url = interaction.options.getString('url');
-        if (!url) {
+        const query = interaction.options.getString('query');
+        if (!query) {
             return interaction.reply({
-                content: 'Please provide a valid YouTube URL.',
+                content: 'Please provide a valid YouTube URL or song title.',
                 ephemeral: true
             });
         }
+
+        // Fonction pour détecter si c'est un lien YouTube
+        const isYouTubeUrl = (str) => {
+            const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
+            return youtubeRegex.test(str);
+        };
 
         // Créer le dossier temp s'il n'existe pas
         const tempDir = path.join(__dirname, '../../../temp');
@@ -54,25 +61,52 @@ module.exports = new ApplicationCommand({
 
         let downloadedFile = null;
         let finalFilePath = null;
+        let url = query;
 
         try {
-            // Étape 1: Télécharger le fichier
-            await interaction.reply({
-                content: 'Downloading your song, please wait...',
-                ephemeral: true
-            });
+            // Si ce n'est pas un lien YouTube, rechercher la chanson
+            if (!isYouTubeUrl(query)) {
+                await interaction.reply({
+                    content: `Searching for: "${query}"...`,
+                    ephemeral: true
+                });
 
+                const searchResults = await search(query);
+                if (!searchResults.videos || searchResults.videos.length === 0) {
+                    return interaction.editReply({
+                        content: 'No songs found for your search query. Please try a different search term.',
+                        ephemeral: true
+                    });
+                }
+
+                // Prendre la première vidéo trouvée
+                const firstVideo = searchResults.videos[0];
+                url = firstVideo.url;
+
+                await interaction.editReply({
+                    content: `Found: "${firstVideo.title}" by ${firstVideo.author.name}. Downloading...`,
+                    ephemeral: true
+                });
+            } else {
+                // Étape 1: Télécharger le fichier (URL directe)
+                await interaction.reply({
+                    content: 'Downloading your song, please wait...',
+                    ephemeral: true
+                });
+            }
+
+            // Étape 2: Télécharger le fichier avec l'URL (recherchée ou directe)
             downloadedFile = await run(url, { format: 'mp3' });
             console.log('Downloaded file:', downloadedFile);
 
-            // Étape 2: Déplacer le fichier vers le dossier temp
+            // Étape 3: Déplacer le fichier vers le dossier temp
             const fileName = path.basename(downloadedFile);
             finalFilePath = path.join(tempDir, fileName);
 
             fs.renameSync(downloadedFile, finalFilePath);
             console.log('Moved file to:', finalFilePath);
 
-            // Étape 3: Jouer la musique
+            // Étape 4: Jouer la musique
             await interaction.editReply({
                 content: 'Download complete! Now playing your song...',
                 ephemeral: true
@@ -89,7 +123,7 @@ module.exports = new ApplicationCommand({
             connection.subscribe(player);
             player.play(resource);
 
-            // Étape 4: Gérer la fin de la lecture et supprimer le fichier
+            // Étape 5: Gérer la fin de la lecture et supprimer le fichier
             player.on(AudioPlayerStatus.Idle, () => {
                 console.log('Finished playing audio file:', finalFilePath);
 

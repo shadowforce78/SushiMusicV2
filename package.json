@@ -17,6 +17,7 @@
     "discord.js": "^14.17.0",
     "discordjs-v14-bot-template": "file:",
     "dotenv": "^16.4.5",
-    "quick-yaml.db": "^1.2.2"
+    "quick-yaml.db": "^1.2.2",
+    "yt-search": "^2.13.1"
   }
 }

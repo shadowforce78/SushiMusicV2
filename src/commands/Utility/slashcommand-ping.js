@@ -1,4 +1,4 @@
-const { ChatInputCommandInteraction } = require("discord.js");
+const { ChatInputCommandInteraction, EmbedBuilder } = require("discord.js");
 const DiscordBot = require("../../client/DiscordBot");
 const ApplicationCommand = require("../../structure/ApplicationCommand");
 
@@ -18,8 +18,16 @@ module.exports = new ApplicationCommand({
      * @param {ChatInputCommandInteraction} interaction 
      */
     run: async (client, interaction) => {
+
+        const superSexyEmbed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setTitle('Pong!')
+            .setDescription(`Latency: ${Date.now() - interaction.createdTimestamp}ms\nAPI Latency: ${Math.round(client.ws.ping)}ms`)
+            .setTimestamp()
+            .setFooter({ text: 'SushiMusic Bot', iconURL: client.user.displayAvatarURL() });
         await interaction.reply({
-            content: '**Pong!** ' + client.ws.ping + 'ms'
+            embeds: [superSexyEmbed],
+            ephemeral: true
         });
     }
 }).toJSON();
