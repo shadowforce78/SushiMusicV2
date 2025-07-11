@@ -107,27 +107,14 @@ class MusicQueue {
         // Supprimer la chanson actuelle de la base
         await musicDatabase.clearCurrentSong(guildId);
 
-        // Attendre un délai pour libérer le fichier
-        setTimeout(() => {
-            // Supprimer le fichier de la chanson terminée
-            if (queue.currentSong && fs.existsSync(queue.currentSong.filePath)) {
-                try {
-                    fs.unlinkSync(queue.currentSong.filePath);
-                    console.log('Deleted temporary file:', queue.currentSong.filePath);
-                } catch (error) {
-                    console.error('Error deleting completed file:', error);
-                }
-            }
-        }, 100);
-
         queue.currentSong = null;
         queue.isPlaying = false;
 
-        // Jouer la prochaine chanson ou nettoyer
+        // Jouer la prochaine chanson
         if (queue.songs.length > 0) {
             await this.playNext(guildId);
         } else {
-            this.cleanup(guildId);
+            await this.cleanup(guildId);
         }
     }
 
@@ -154,28 +141,15 @@ class MusicQueue {
         // Arrêter le player proprement
         queue.player.stop();
 
-        // Attendre un petit délai pour que le fichier soit libéré
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Supprimer le fichier actuel
-        if (queue.currentSong && fs.existsSync(queue.currentSong.filePath)) {
-            try {
-                fs.unlinkSync(queue.currentSong.filePath);
-                console.log('Deleted skipped file:', queue.currentSong.filePath);
-            } catch (error) {
-                console.error('Error deleting skipped file:', error);
-                // Continuer même si la suppression échoue
-            }
-        }
-
         queue.currentSong = null;
         queue.isPlaying = false;
 
         // Jouer la prochaine chanson
         if (queue.songs.length > 0) {
-            return await this.playNext(guildId);
+            const success = await this.playNext(guildId);
+            return success;
         } else {
-            this.cleanup(guildId);
+            await this.cleanup(guildId);
             return false;
         }
     }
@@ -194,34 +168,6 @@ class MusicQueue {
         await musicDatabase.clearQueue(guildId);
         await musicDatabase.clearCurrentSong(guildId);
 
-        // Attendre un délai pour libérer les fichiers
-        setTimeout(() => {
-            // Supprimer le fichier actuel
-            if (queue.currentSong && fs.existsSync(queue.currentSong.filePath)) {
-                try {
-                    fs.unlinkSync(queue.currentSong.filePath);
-                    console.log('Deleted current file:', queue.currentSong.filePath);
-                } catch (error) {
-                    console.error('Error deleting current file:', error);
-                }
-            }
-
-            // Supprimer tous les fichiers en attente
-            queue.songs.forEach(song => {
-                if (fs.existsSync(song.filePath)) {
-                    try {
-                        fs.unlinkSync(song.filePath);
-                        console.log('Deleted queued file:', song.filePath);
-                    } catch (error) {
-                        console.error('Error deleting queued file:', error);
-                    }
-                }
-            });
-
-            // Nettoyer le dossier temp
-            this.clearTempDir();
-        }, 200);
-
         // Déconnecter
         if (queue.connection) {
             queue.connection.destroy();
@@ -229,25 +175,6 @@ class MusicQueue {
 
         // Supprimer la queue
         this.queues.delete(guildId);
-    }
-
-    // Nettoyer le dossier temp
-    clearTempDir() {
-        try {
-            const tempDir = path.join(__dirname, '../../temp');
-            if (fs.existsSync(tempDir)) {
-                const files = fs.readdirSync(tempDir);
-                for (const file of files) {
-                    const filePath = path.join(tempDir, file);
-                    if (fs.statSync(filePath).isFile() && path.extname(file) === '.mp3') {
-                        fs.unlinkSync(filePath);
-                        console.log('Cleaned up temp file:', filePath);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error cleaning temp directory:', error);
-        }
     }
 
     // Obtenir les informations de la queue

@@ -50,7 +50,6 @@ module.exports = new ApplicationCommand({
 
         } catch (error) {
             console.error('Error stopping music:', error);
-            
             // Vérifier si on a déjà répondu à l'interaction
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({

@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { search } = require('yt-search');
 const musicQueue = require('../../utils/MusicQueue');
+const fileCache = require('../../utils/FileCache');
 
 
 module.exports = new ApplicationCommand({
@@ -24,7 +25,7 @@ module.exports = new ApplicationCommand({
         ]
     },
     options: {
-        cooldown: 5000
+        cooldown: 1000
     },
     /**
      * 
@@ -60,10 +61,8 @@ module.exports = new ApplicationCommand({
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        // Nettoyer le dossier temp seulement si aucune queue n'existe
-        if (!musicQueue.hasQueue(interaction.guild.id)) {
-            musicQueue.clearTempDir();
-        }
+        // Le nettoyage est maintenant géré automatiquement par FileCache
+        // Pas besoin de nettoyer manuellement
 
         let downloadedFile = null;
         let finalFilePath = null;
@@ -74,7 +73,7 @@ module.exports = new ApplicationCommand({
             // Si ce n'est pas un lien YouTube, rechercher la chanson
             if (!isYouTubeUrl(query)) {
                 await interaction.reply({
-                    content: `Searching for: "${query}"...`,
+                    content: `🔍 Searching for: "${query}"...`,
                     ephemeral: true
                 });
 
@@ -92,27 +91,42 @@ module.exports = new ApplicationCommand({
                 songTitle = `${firstVideo.title} - ${firstVideo.author.name}`;
                 
                 await interaction.editReply({
-                    content: `Found: "${firstVideo.title}" by ${firstVideo.author.name}. Downloading...`,
+                    content: `✅ Found: "${firstVideo.title}" by ${firstVideo.author.name}`,
                     ephemeral: true
                 });
             } else {
-                // Étape 1: Télécharger le fichier (URL directe)
+                // URL directe fournie
                 await interaction.reply({
-                    content: 'Downloading your song, please wait...',
+                    content: '🔗 Processing YouTube URL...',
                     ephemeral: true
                 });
             }
 
-            // Étape 2: Télécharger le fichier avec l'URL (recherchée ou directe)
-            downloadedFile = await run(url, { format: 'mp3' });
-            console.log('Downloaded file:', downloadedFile);
+            // Vérifier si le fichier existe déjà dans le cache
+            const cachedFile = fileCache.getCachedFile(url);
+            if (cachedFile) {
+                console.log('Using cached file:', cachedFile.filePath);
+                finalFilePath = cachedFile.filePath;
+                songTitle = cachedFile.title;
+                
+                await interaction.editReply({
+                    content: `⚡ Using cached version of "${songTitle}"`,
+                    ephemeral: true
+                });
+            } else {
+                // Télécharger le fichier
+                await interaction.editReply({
+                    content: '⬬ Downloading song, please wait...',
+                    ephemeral: true
+                });
+                
+                downloadedFile = await run(url, { format: 'mp3' });
+                console.log('Downloaded file:', downloadedFile);
 
-            // Étape 3: Déplacer le fichier vers le dossier temp
-            const fileName = path.basename(downloadedFile);
-            finalFilePath = path.join(tempDir, fileName);
-
-            fs.renameSync(downloadedFile, finalFilePath);
-            console.log('Moved file to:', finalFilePath);
+                // Mettre en cache et renommer avec timestamp
+                finalFilePath = fileCache.cacheDownloadedFile(downloadedFile, url, songTitle);
+                console.log('Cached file to:', finalFilePath);
+            }
 
             // Créer l'objet chanson
             const songData = {
