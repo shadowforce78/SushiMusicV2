@@ -53,4 +53,4 @@ module.exports = new Component({
             ephemeral: true
         });
     }
-});
+}).toJSON()

@@ -55,4 +55,4 @@ module.exports = new Component({
             }
         }, 1000);
     }
-});
+}).toJSON()

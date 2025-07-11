@@ -11,6 +11,7 @@
   "author": "TFAGaming",
   "license": "GPL-3.0",
   "dependencies": {
+    "@discordjs/opus": "^0.10.0",
     "@discordjs/voice": "^0.18.0",
     "@saumondeluxe/musicord-dl": "^1.2.0",
     "colors": "^1.4.0",

@@ -35,4 +35,4 @@ module.exports = new Component({
             console.error('Error updating message after stop:', error);
         }
     }
-});
+}).toJSON()

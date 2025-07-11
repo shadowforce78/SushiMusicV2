@@ -121,4 +121,4 @@ module.exports = new Component({
             components: [controlRow, volumeRow]
         });
     }
-});
+}).toJSON();

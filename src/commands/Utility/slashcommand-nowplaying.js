@@ -12,8 +12,6 @@ module.exports = new ApplicationCommand({
     },
     options: {
         cooldown: 3000,
-        dirname: __dirname,
-        ownerOnly: false
     },
 
     /**
@@ -113,4 +111,4 @@ module.exports = new ApplicationCommand({
             ephemeral: false
         });
     }
-});
+}).toJSON()
