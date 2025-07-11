@@ -9,6 +9,116 @@ const { search } = require('yt-search');
 const musicQueue = require('../../utils/MusicQueue');
 const fileCache = require('../../utils/FileCache');
 
+// Fonction utilitaire pour vérifier si c'est un URL YouTube
+function isYouTubeUrl(url) {
+    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
+    return youtubeRegex.test(url);
+}
+
+// Traiter une requête de chanson (recherche/cache/téléchargement)
+async function processSongRequest(interaction, query, hasReplied = false) {
+    let downloadedFile = null;
+    let finalFilePath = null;
+    let url = query;
+    let songTitle = query;
+
+    try {
+        // Si ce n'est pas un lien YouTube, rechercher la chanson
+        if (!isYouTubeUrl(query)) {
+            if (!hasReplied) {
+                await interaction.reply({
+                    content: `🔍 Searching for: "${query}"...`,
+                    ephemeral: true
+                });
+            } else {
+                await interaction.editReply({
+                    content: `🔍 Searching for: "${query}"...`,
+                    ephemeral: true
+                });
+            }
+
+            const searchResults = await search(query);
+            if (!searchResults.videos || searchResults.videos.length === 0) {
+                await interaction.editReply({
+                    content: 'No songs found for your search query. Please try a different search term.',
+                    ephemeral: true
+                });
+                return null;
+            }
+
+            // Prendre la première vidéo trouvée
+            const firstVideo = searchResults.videos[0];
+            url = firstVideo.url;
+            songTitle = `${firstVideo.title} - ${firstVideo.author.name}`;
+            
+            await interaction.editReply({
+                content: `✅ Found: "${firstVideo.title}" by ${firstVideo.author.name}`,
+                ephemeral: true
+            });
+        } else {
+            // URL directe fournie
+            if (!hasReplied) {
+                await interaction.reply({
+                    content: '🔗 Processing YouTube URL...',
+                    ephemeral: true
+                });
+            } else {
+                await interaction.editReply({
+                    content: '🔗 Processing YouTube URL...',
+                    ephemeral: true
+                });
+            }
+        }
+
+        // Vérifier si le fichier existe déjà dans le cache
+        const cachedFile = fileCache.getCachedFile(url);
+        if (cachedFile) {
+            console.log('Using cached file:', cachedFile.filePath);
+            finalFilePath = cachedFile.filePath;
+            songTitle = cachedFile.title;
+            
+            await interaction.editReply({
+                content: `⚡ Using cached version of "${songTitle}"`,
+                ephemeral: true
+            });
+        } else {
+            // Télécharger le fichier
+            await interaction.editReply({
+                content: '⬬ Downloading song, please wait...',
+                ephemeral: true
+            });
+            
+            downloadedFile = await run(url, { format: 'mp3' });
+            console.log('Downloaded file:', downloadedFile);
+
+            // Mettre en cache et renommer avec timestamp
+            finalFilePath = fileCache.cacheDownloadedFile(downloadedFile, url, songTitle);
+            console.log('Cached file to:', finalFilePath);
+        }
+
+        // Créer l'objet chanson
+        return {
+            title: songTitle,
+            filePath: finalFilePath,
+            url: url,
+            requestedBy: interaction.user.tag
+        };
+
+    } catch (error) {
+        console.error('Error processing song request:', error);
+        
+        // Nettoyer en cas d'erreur
+        if (downloadedFile && fs.existsSync(downloadedFile)) {
+            try {
+                fs.unlinkSync(downloadedFile);
+            } catch (cleanupError) {
+                console.error('Error cleaning up file:', cleanupError);
+            }
+        }
+        
+        throw error;
+    }
+}
 
 module.exports = new ApplicationCommand({
     command: {
@@ -25,117 +135,33 @@ module.exports = new ApplicationCommand({
         ]
     },
     options: {
-        cooldown: 1000
+        cooldown: 1000,
     },
+
     /**
      * 
      * @param {DiscordBot} client 
      * @param {ChatInputCommandInteraction} interaction 
      */
+
     run: async (client, interaction) => {
-        const channel = interaction.member.voice.channel;
+        const channel = interaction.member?.voice?.channel;
         if (!channel) {
             return interaction.reply({
-                content: 'You need to be in a voice channel to use this command.',
+                content: 'You need to be in a voice channel to use this command!',
                 ephemeral: true
             });
         }
 
         const query = interaction.options.getString('query');
-        if (!query) {
-            return interaction.reply({
-                content: 'Please provide a valid YouTube URL or song title.',
-                ephemeral: true
-            });
-        }
-
-        // Fonction pour détecter si c'est un lien YouTube
-        const isYouTubeUrl = (str) => {
-            const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
-            return youtubeRegex.test(str);
-        };
+        const tempDir = path.join(__dirname, '../../../temp');
 
         // Créer le dossier temp s'il n'existe pas
-        const tempDir = path.join(__dirname, '../../../temp');
         if (!fs.existsSync(tempDir)) {
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        // Le nettoyage est maintenant géré automatiquement par FileCache
-        // Pas besoin de nettoyer manuellement
-
-        let downloadedFile = null;
-        let finalFilePath = null;
-        let url = query;
-        let songTitle = query;
-
         try {
-            // Si ce n'est pas un lien YouTube, rechercher la chanson
-            if (!isYouTubeUrl(query)) {
-                await interaction.reply({
-                    content: `🔍 Searching for: "${query}"...`,
-                    ephemeral: true
-                });
-
-                const searchResults = await search(query);
-                if (!searchResults.videos || searchResults.videos.length === 0) {
-                    return interaction.editReply({
-                        content: 'No songs found for your search query. Please try a different search term.',
-                        ephemeral: true
-                    });
-                }
-
-                // Prendre la première vidéo trouvée
-                const firstVideo = searchResults.videos[0];
-                url = firstVideo.url;
-                songTitle = `${firstVideo.title} - ${firstVideo.author.name}`;
-                
-                await interaction.editReply({
-                    content: `✅ Found: "${firstVideo.title}" by ${firstVideo.author.name}`,
-                    ephemeral: true
-                });
-            } else {
-                // URL directe fournie
-                await interaction.reply({
-                    content: '🔗 Processing YouTube URL...',
-                    ephemeral: true
-                });
-            }
-
-            // Vérifier si le fichier existe déjà dans le cache
-            const cachedFile = fileCache.getCachedFile(url);
-            if (cachedFile) {
-                console.log('Using cached file:', cachedFile.filePath);
-                finalFilePath = cachedFile.filePath;
-                songTitle = cachedFile.title;
-                
-                await interaction.editReply({
-                    content: `⚡ Using cached version of "${songTitle}"`,
-                    ephemeral: true
-                });
-            } else {
-                // Télécharger le fichier
-                await interaction.editReply({
-                    content: '⬬ Downloading song, please wait...',
-                    ephemeral: true
-                });
-                
-                downloadedFile = await run(url, { format: 'mp3' });
-                console.log('Downloaded file:', downloadedFile);
-
-                // Mettre en cache et renommer avec timestamp
-                finalFilePath = fileCache.cacheDownloadedFile(downloadedFile, url, songTitle);
-                console.log('Cached file to:', finalFilePath);
-            }
-
-            // Créer l'objet chanson
-            const songData = {
-                title: songTitle,
-                filePath: finalFilePath,
-                url: url,
-                requestedBy: interaction.user.tag
-            };
-
             // Vérifier s'il y a déjà une queue active
             let queue = musicQueue.getQueue(interaction.guild.id);
             
@@ -149,9 +175,11 @@ module.exports = new ApplicationCommand({
 
                 queue = musicQueue.createQueue(interaction.guild.id, connection, interaction);
                 
-                if (await musicQueue.addSong(interaction.guild.id, songData)) {
+                // Pour la première chanson, traiter directement (l'interaction sera gérée dans processSongRequest)
+                const songData = await processSongRequest(interaction, query, false);
+                if (songData && await musicQueue.addSong(interaction.guild.id, songData)) {
                     await interaction.editReply({
-                        content: `🎵 Added to queue: **${songTitle}**\nStarting playback...`,
+                        content: `🎵 Added to queue: **${songData.title}**\nStarting playback...`,
                         ephemeral: true
                     });
 
@@ -160,41 +188,39 @@ module.exports = new ApplicationCommand({
                 } else {
                     throw new Error('Failed to add song to database queue');
                 }
-            } else {            // Ajouter à la queue existante
-            if (await musicQueue.addSong(interaction.guild.id, songData)) {
-                const queuePosition = queue.songs.length;
+            } else {
+                // Ajouter à la queue existante en maintenant l'ordre
+                const currentQueueLength = queue.songs.length;
+                const position = currentQueueLength + 1;
                 
-                await interaction.editReply({
-                    content: `📝 Added to queue: **${songTitle}**\nPosition in queue: **${queuePosition}**`,
+                // Répondre immédiatement de l'ajout à la queue
+                await interaction.reply({
+                    content: `📝 Processing and adding to queue: **${query}**\nPosition in queue: **${position}**`,
                     ephemeral: true
                 });
-            } else {
-                throw new Error('Failed to add song to database queue');
-            }
+                
+                // Créer une promesse pour le traitement de cette commande (interaction déjà répondue)
+                const songDataPromise = processSongRequest(interaction, query, true);
+                
+                // Ajouter à la queue ordonnée
+                await musicQueue.addSongInOrder(interaction.guild.id, songDataPromise);
             }
 
         } catch (error) {
             console.error('Download or playback error:', error);
 
-            // Nettoyer en cas d'erreur
-            if (downloadedFile && fs.existsSync(downloadedFile)) {
-                fs.unlinkSync(downloadedFile);
-            }
-            if (finalFilePath && fs.existsSync(finalFilePath)) {
-                fs.unlinkSync(finalFilePath);
-            }
-
+            // Vérifier si l'interaction a été répondue
             if (interaction.replied || interaction.deferred) {
                 await interaction.editReply({
-                    content: 'An error occurred while downloading or playing the song. Please try again later.',
+                    content: 'An error occurred while processing your request.',
                     ephemeral: true
                 });
             } else {
                 await interaction.reply({
-                    content: 'An error occurred while downloading or playing the song. Please try again later.',
+                    content: 'An error occurred while processing your request.',
                     ephemeral: true
                 });
             }
         }
     }
-}).toJSON();
+}).toJSON()

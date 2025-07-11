@@ -6,6 +6,8 @@ const musicDatabase = require('./MusicDatabase');
 class MusicQueue {
     constructor() {
         this.queues = new Map(); // guildId -> queue data
+        this.commandQueue = new Map(); // guildId -> array of pending commands
+        this.isProcessing = new Map(); // guildId -> boolean
     }
 
     // Créer une nouvelle queue pour un serveur
@@ -56,6 +58,42 @@ class MusicQueue {
             return true;
         }
         return false;
+    }
+
+    // Ajouter une chanson à la queue en maintenant l'ordre
+    async addSongInOrder(guildId, songDataPromise) {
+        // Initialiser la command queue si elle n'existe pas
+        if (!this.commandQueue.has(guildId)) {
+            this.commandQueue.set(guildId, []);
+        }
+        
+        const commands = this.commandQueue.get(guildId);
+        commands.push(songDataPromise);
+        
+        // Traiter la queue si on n'est pas déjà en train de traiter
+        if (!this.isProcessing.get(guildId)) {
+            await this.processCommandQueue(guildId);
+        }
+    }
+
+    // Traiter la queue de commandes dans l'ordre
+    async processCommandQueue(guildId) {
+        this.isProcessing.set(guildId, true);
+        const commands = this.commandQueue.get(guildId) || [];
+        
+        while (commands.length > 0) {
+            const songDataPromise = commands.shift();
+            try {
+                const songData = await songDataPromise;
+                if (songData) {
+                    await this.addSong(guildId, songData);
+                }
+            } catch (error) {
+                console.error('Error processing command in queue:', error);
+            }
+        }
+        
+        this.isProcessing.set(guildId, false);
     }
 
     // Jouer la prochaine chanson
