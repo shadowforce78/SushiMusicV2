@@ -19,6 +19,8 @@ class MusicQueue {
             songs: [],
             currentSong: null,
             isPlaying: false,
+            isPaused: false,
+            volume: 1.0, // Volume de 0.0 à 1.0
             interaction
         };
 
@@ -77,7 +79,15 @@ class MusicQueue {
                 await musicDatabase.removeQueueSong(guildId, song.id);
             }
 
-            const resource = createAudioResource(song.filePath);
+            const resource = createAudioResource(song.filePath, {
+                inlineVolume: true
+            });
+            
+            // Appliquer le volume
+            if (resource.volume) {
+                resource.volume.setVolume(queue.volume);
+            }
+            
             queue.player.play(resource);
             
             // Notifier qu'une nouvelle chanson commence
@@ -235,6 +245,54 @@ class MusicQueue {
             console.error(`Error restoring guild session for ${guildId}:`, error);
             return false;
         }
+    }
+
+    // Mettre en pause ou reprendre
+    pause(guildId) {
+        const queue = this.queues.get(guildId);
+        if (!queue || !queue.isPlaying) return false;
+
+        if (queue.isPaused) {
+            queue.player.unpause();
+            queue.isPaused = false;
+            return { action: 'resumed', success: true };
+        } else {
+            queue.player.pause();
+            queue.isPaused = true;
+            return { action: 'paused', success: true };
+        }
+    }
+
+    // Changer le volume
+    setVolume(guildId, volume) {
+        const queue = this.queues.get(guildId);
+        if (!queue) return false;
+
+        // Limiter le volume entre 0.0 et 1.0
+        volume = Math.max(0.0, Math.min(1.0, volume));
+        queue.volume = volume;
+
+        // Appliquer le volume si une chanson joue
+        if (queue.player && queue.player.state.resource && queue.player.state.resource.volume) {
+            queue.player.state.resource.volume.setVolume(volume);
+        }
+
+        return { volume: Math.round(volume * 100), success: true };
+    }
+
+    // Obtenir le statut actuel
+    getStatus(guildId) {
+        const queue = this.queues.get(guildId);
+        if (!queue) return null;
+
+        return {
+            isPlaying: queue.isPlaying,
+            isPaused: queue.isPaused,
+            volume: Math.round(queue.volume * 100),
+            currentSong: queue.currentSong,
+            queueLength: queue.songs.length,
+            hasQueue: queue.songs.length > 0
+        };
     }
 }
 

@@ -6,7 +6,7 @@ const CommandsListener = require("./handler/CommandsListener");
 const ComponentsHandler = require("./handler/ComponentsHandler");
 const ComponentsListener = require("./handler/ComponentsListener");
 const EventsHandler = require("./handler/EventsHandler");
-const { QuickYAML } = require('quick-yaml.db');
+const musicDatabase = require("../utils/MusicDatabase");
 
 class DiscordBot extends Client {
     collection = {
@@ -24,15 +24,53 @@ class DiscordBot extends Client {
     login_attempts = 0;
     login_timestamp = 0;
     statusMessages = [
-        { name: 'Status 1', type: 4 },
-        { name: 'Status 2', type: 4 },
-        { name: 'Status 3', type: 4 }
+        { name: 'Playing music', type: 4 },
+        { name: 'Dancing', type: 4 },
+        { name: 'Partying', type: 4 }
     ];
 
     commands_handler = new CommandsHandler(this);
     components_handler = new ComponentsHandler(this);
     events_handler = new EventsHandler(this);
-    database = new QuickYAML(config.database.path);
+    
+    // Créer un wrapper pour maintenir la compatibilité avec l'ancienne API
+    database = {
+        get: (key) => {
+            if (key.startsWith('prefix-')) {
+                const guildId = key.replace('prefix-', '');
+                return musicDatabase.getPrefix(guildId);
+            }
+            return null;
+        },
+        set: (key, value) => {
+            if (key.startsWith('prefix-')) {
+                const guildId = key.replace('prefix-', '');
+                return musicDatabase.setPrefix(guildId, value);
+            }
+            return false;
+        },
+        delete: (key) => {
+            if (key.startsWith('prefix-')) {
+                const guildId = key.replace('prefix-', '');
+                return musicDatabase.deletePrefix(guildId);
+            }
+            return false;
+        },
+        has: (key) => {
+            if (key.startsWith('prefix-')) {
+                const guildId = key.replace('prefix-', '');
+                return musicDatabase.hasPrefix(guildId);
+            }
+            return false;
+        },
+        ensure: (key, defaultValue) => {
+            if (key.startsWith('prefix-')) {
+                const guildId = key.replace('prefix-', '');
+                return musicDatabase.ensurePrefix(guildId, defaultValue);
+            }
+            return defaultValue;
+        }
+    };
 
     constructor() {
         super({

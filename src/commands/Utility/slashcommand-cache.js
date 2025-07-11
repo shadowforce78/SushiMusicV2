@@ -29,6 +29,7 @@ module.exports = new ApplicationCommand({
     },
     options: {
         cooldown: 5000,
+        dirname: __dirname,
         botDevelopers: true
     },
 

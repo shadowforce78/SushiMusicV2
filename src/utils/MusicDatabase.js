@@ -313,6 +313,46 @@ class MusicDatabase {
             return { queue: [], currentSong: null, hasData: false };
         }
     }
+
+    // === GESTION DES PRÉFIXES ===
+    
+    // Obtenir le préfixe d'un serveur
+    getPrefix(guildId) {
+        const data = this.loadData();
+        if (!data.prefixes) data.prefixes = {};
+        return data.prefixes[guildId];
+    }
+
+    // Définir le préfixe d'un serveur
+    setPrefix(guildId, prefix) {
+        const data = this.loadData();
+        if (!data.prefixes) data.prefixes = {};
+        data.prefixes[guildId] = prefix;
+        this.saveData(data);
+        return true;
+    }
+
+    // Supprimer le préfixe d'un serveur (revenir au défaut)
+    deletePrefix(guildId) {
+        const data = this.loadData();
+        if (!data.prefixes) data.prefixes = {};
+        delete data.prefixes[guildId];
+        this.saveData(data);
+        return true;
+    }
+
+    // Vérifier si un serveur a un préfixe personnalisé
+    hasPrefix(guildId) {
+        const data = this.loadData();
+        if (!data.prefixes) return false;
+        return data.prefixes.hasOwnProperty(guildId);
+    }
+
+    // Obtenir le préfixe avec une valeur par défaut
+    ensurePrefix(guildId, defaultPrefix) {
+        const customPrefix = this.getPrefix(guildId);
+        return customPrefix || defaultPrefix;
+    }
 }
 
 // Instance globale
